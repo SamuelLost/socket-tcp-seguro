@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 
 //defines
@@ -213,8 +214,8 @@ int main(int argc, char* argv[]) {
     //OBS: na funcao gethostbyname(), pode ser passado como
     //parametro tanto um DNS quanto um IP. Como neste teste será usado comunicação entre dois sockets localmente
     //na Raspbnerry Pi, será utiliado o IP de loopbakc (127.0.0.1)
-    server = gethostbyname("192.168.1.7");
-    printf("\nTentando conectar ao host %s...\n", server->h_name);
+    server = gethostbyname("127.0.0.1");
+    //printf("\nTentando conectar ao host %s...\n", server->h_name);
 
     //verifica se houve falha ao contactar o host
     if (server == NULL) {
@@ -227,9 +228,11 @@ int main(int argc, char* argv[]) {
 
     //preenche a estrutura de socket
     serv_addr.sin_family = AF_INET;
-    bcopy((char*)server->h_addr_list,
-        (char*)&serv_addr.sin_addr.s_addr,
-        server->h_length);
+    serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    // serv_addr.sin_port = htons(portno);
+    // bcopy((char*)server->h_addr_list,
+    //     (char*)&serv_addr.sin_addr.s_addr,
+    //     server->h_length);
     serv_addr.sin_port = htons(portno);
 
     //Tenta se conectar ao socket server
@@ -241,31 +244,35 @@ int main(int argc, char* argv[]) {
     //le a mensagem a ser enviada.
     //OBS: aqui foi usado fgets() pois a funcao gets() possui uma falha,
     //podendo causar buffer overflow.
-    printf("Mensagem a ser enviada: ");
-    memset(buffer, 0x00, sizeof(buffer));
-    fgets(buffer, sizeof(buffer), stdin);
+    while(1) {
 
-    //Criptografa a mensagem construida e a envia ao host
-    ciphertext_len = encrypt(buffer, strlen((char*)buffer), buffer_key, buffer_iv, ciphertext);
-    n = write(sockfd, ciphertext, ciphertext_len);
+        printf("Mensagem a ser enviada: ");
+        memset(buffer, 0x00, sizeof(buffer));
+        fgets(buffer, sizeof(buffer), stdin);
 
-    if (n < 0)
-        error("ERRO: impossivel enviar mensagem criptografada ao host");
+        //Criptografa a mensagem construida e a envia ao host
+        ciphertext_len = encrypt(buffer, strlen((char*)buffer), buffer_key, buffer_iv, ciphertext);
+        n = write(sockfd, ciphertext, ciphertext_len);
 
-    bzero(buffer, 256);
+        if (n < 0)
+            error("ERRO: impossivel enviar mensagem criptografada ao host");
 
-    //aguarda receber mensagem criptografada do host
-    n = read(sockfd, ciphertext, 255);
-    if (n < 0)
-        error("ERRO: falha ao receber dados do host");
-    //Descriptografa a mensagem e a exibe na tela
-    ciphertext_len = n;
-    decryptedtext_len = decrypt(ciphertext, ciphertext_len, buffer_key, buffer_iv, decryptedtext);
+        bzero(buffer, 256);
 
-    printf("\n\n[Mensagem recebida do servidor]\n\n");
+        //aguarda receber mensagem criptografada do host
+        n = read(sockfd, ciphertext, 255);
+        if (n < 0)
+            error("ERRO: falha ao receber dados do host");
+        //Descriptografa a mensagem e a exibe na tela
+        ciphertext_len = n;
+        decryptedtext_len = decrypt(ciphertext, ciphertext_len, buffer_key, buffer_iv, decryptedtext);
 
-    for (i = 0; i < decryptedtext_len; i++)
-        printf("%c", decryptedtext[i]);
+        printf("\n\n[Mensagem recebida do servidor]\n\n");
+
+        for (i = 0; i < decryptedtext_len; i++)
+            printf("%c", decryptedtext[i]);
+        printf("\n");
+    }
 
     printf("\n\n");
 

@@ -2,10 +2,21 @@
 #include <openssl/conf.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#include <openssl/md5.h>
 #include <string.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+
+#define LED_HASH "02ead54d7641d63752e368936d9b0b01"
+#define typeof(var) _Generic( (var),\
+char: "Char",\
+int: "Integer",\
+float: "Float",\
+char *: "String",\
+void *: "Pointer",\
+default: "Undefined")
 
 //defines
 #define TAM_BUFFER_CRIPTO 1024
@@ -177,6 +188,30 @@ void carrega_key_e_iv(void) {
     printf("[IV] Carregado com sucesso.\n\n");
 }
 
+void acender_led(void) {
+    FILE* arq;
+    arq = fopen("/sys/class/leds/beaglebone:green:usr3/brightness", "w");
+    if (arq == NULL)
+        printf("Erro: impossivel acender o LED\n");
+    else {
+        fprintf(arq, "1");
+    }
+    fclose(arq);
+}
+
+char* get_md5(char* str) {
+    unsigned char hash[MD5_DIGEST_LENGTH];
+    MD5_CTX md5;
+    MD5_Init(&md5);
+    MD5_Update(&md5, str, strlen(str));
+    MD5_Final(hash, &md5);
+
+    char* md5string = (char*)malloc(33);
+    for (int i = 0; i < 16; i++)
+        sprintf(&md5string[i * 2], "%02x", (unsigned int)hash[i]);
+    return md5string;
+}
+
 int main(int argc, char* argv[]) {
     int socket_desc, client_sock, c, read_size; //socket_desc: descriptor do socket servidor
     //client_sock: descriptor da conexao com o client
@@ -208,7 +243,7 @@ int main(int argc, char* argv[]) {
 
     //Prepara a estrutura de socket do servidor (contendo configurações do socket, como protocolo IPv4, porta de comunicacao e filtro de ips que podem se conectar)
     server.sin_family = AF_INET;
-    server.sin_addr.s_addr = INADDR_ANY;
+    server.sin_addr.s_addr = htonl(INADDR_ANY);
     server.sin_port = htons(PORTA_SOCKET_SERVER);
 
     //Tenta fazer Bind (informa que o referido socket operara na porta definida por PORTA_SOCKET_SERVER)
@@ -242,13 +277,24 @@ int main(int argc, char* argv[]) {
         decryptedtext_len = decrypt(ciphertext, ciphertext_len, buffer_key, buffer_iv, decryptedtext);
 
         //Mostra a mensagem recebida (decriptografada) na tela:
-        printf("\n\nMensagem decriptografada: %s\n\n", decryptedtext);
+        printf("\nMensagem do cliente: %s\n", decryptedtext);
+        char *md5 = get_md5(decryptedtext);
+        printf("MD5: %s\n", md5);
+        printf("%d", strcmp(md5, LED_HASH)); //testar na placa
+        if(strcmp(md5, LED_HASH) == 0) {
+            printf("LED ON\n");
+            //acender_led();
+        } else {
+            printf("LED OFF\n");
+        }
+        printf("Para o cliente: ");
 
         //Constroi a mensagem descriptografada a ser enviada de volta ao client
         memset(msg_client, 0, TAM_MAX_MENSAGEM_CLIENT);
-        memcpy(msg_client, decryptedtext, strlen(decryptedtext));
-        sprintf(msg_client, "%s - modificado", msg_client);
-        printf("\n\nMensagem a ser enviada de volta ao client: %s.\n\n", msg_client);
+        fgets(msg_client, sizeof(msg_client), stdin);
+        //memcpy(msg_client, decryptedtext, strlen(decryptedtext));
+        //sprintf(msg_client, "%s - modificado", msg_client);
+        //printf("\n\nMensagem a ser enviada de volta ao client: %s.\n\n", msg_client);
 
         //Criptografa a mensagem construida e a envia ao client
         ciphertext_len = encrypt(msg_client, strlen((char*)msg_client), buffer_key, buffer_iv, ciphertext);
